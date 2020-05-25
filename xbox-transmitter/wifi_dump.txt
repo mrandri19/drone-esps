@@ -1,0 +1,42 @@
+I (0) cpu_start: App cpu up.
+I (440) heap_init: Initializing. RAM available for dynamic allocation:
+I (447) heap_init: At 3FFAE6E0 len 00001920 (6 KiB): DRAM
+I (453) heap_init: At 3FFB9348 len 00026CB8 (155 KiB): DRAM
+I (459) heap_init: At 3FFE0440 len 00003AE0 (14 KiB): D/IRAM
+I (465) heap_init: At 3FFE4350 len 0001BCB0 (111 KiB): D/IRAM
+I (472) heap_init: At 40095BD8 len 0000A428 (41 KiB): IRAM
+I (478) cpu_start: Pro cpu start user code
+I (496) spi_flash: detected chip: gd
+I (497) spi_flash: flash io: dio
+W (497) spi_flash: Detected size(4096k) larger than the size in the binary image header(2048k). Using the size in the binary image header.
+I (507) cpu_start: Starting scheduler on PRO CPU.
+I (0) cpu_start: Starting scheduler on APP CPU.
+I (562) wifi softAP: ESP_WIFI_MODE_AP
+I (592) wifi:wifi driver task: 3ffc1b3c, prio:23, stack:6656, core=0
+I (592) system_api: Base MAC address is not set
+I (592) system_api: read default base MAC address from EFUSE
+I (662) wifi:wifi firmware version: e3f8931
+I (662) wifi:wifi certification version: v7.0
+I (662) wifi:config NVS flash: enabled
+I (662) wifi:config nano formating: disabled
+I (662) wifi:Init dynamic tx buffer num: 32
+I (672) wifi:Init data frame dynamic rx buffer num: 32
+I (672) wifi:Init management frame dynamic rx buffer num: 32
+I (682) wifi:Init management short buffer num: 32
+I (682) wifi:Init static rx buffer size: 1600
+I (692) wifi:Init static rx buffer num: 10
+I (692) wifi:Init dynamic rx buffer num: 32
+W (1502) phy_init: failed to load RF calibration data (0xffffffff), falling back to full calibration
+I (1642) phy: phy_version: 4181, c9a03e2, Mar 10 2020, 12:45:06, 0, 2
+I (1712) wifi:mode : softAP (24:0a:c4:10:4e:c9)
+I (1712) wifi:Total power save buffer number: 16
+I (1722) wifi:Init max length of beacon: 752/752
+I (1722) wifi:Init max length of beacon: 752/752
+I (1722) wifi softAP: wifi_init_softap finished. SSID:drone-wifi password:testtest channel:1
+I (49372) wifi:new:<1,0>, old:<1,1>, ap:<1,1>, sta:<255,255>, prof:1
+I (49372) wifi:station: 2c:59:8a:5a:04:fe join, AID=1, bgn, 20
+I (49432) wifi softAP: station 2c:59:8a:5a:04:fe join, AID=1
+I (49592) esp_netif_lwip: DHCP server assigned IP to a station, IP is: 192.168.4.2
+I (66702) wifi:station: 2c:59:8a:5a:04:fe leave, AID = 1, bss_flags is 134243, bss:0x3ffba954
+I (66702) wifi:new:<1,0>, old:<1,0>, ap:<1,1>, sta:<255,255>, prof:1
+I (66702) wifi softAP: station 2c:59:8a:5a:04:fe leave, AID=1
