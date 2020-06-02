@@ -1,27 +1,70 @@
-#include "driver/adc.h"
-#include "driver/gpio.h"
-#include "driver/i2c.h"
-#include "driver/ledc.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "hal/gpio_types.h"
-#include "sdkconfig.h"
 #include <stdio.h>
 
 #include "MPU6050.h"
 #include "MPU6050_6Axis_MotionApps20.h"
+#include "driver/adc.h"
+#include "driver/gpio.h"
+#include "driver/i2c.h"
+#include "driver/ledc.h"
+#include "driver/uart.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "sdkconfig.h"
 
+#define TAG "blink"
 #define SPEED_MODE LEDC_LOW_SPEED_MODE
 #define CHANNEL LEDC_CHANNEL_0
 #define ESC_SIGNAL_GPIO_NUM 33
+#define PERIOD 20  // 20ms => f = 1/T = 50Hz
+#define UART_NUM UART_NUM_0
+#define DUTY_RESOLUTION LEDC_TIMER_19_BIT
+
+uint32_t ms_to_duty(float ms) { return (1 << DUTY_RESOLUTION) * (ms / 20.0f); }
+
+float clamp(float a, float b, float c) {
+  if (b < a) {
+    return a;
+  }
+  if (b > c) {
+    return c;
+  }
+  return b;
+}
+
+static const int BUF_SIZE = 1024;
+static const int RD_BUF_SIZE = BUF_SIZE;
+static QueueHandle_t uart0_queue;
 
 extern "C" {
 void app_main(void) {
   // ***************************************************************************
+  uart_config_t uart_config = {};
+  uart_config.baud_rate = 115200;
+  uart_config.data_bits = UART_DATA_8_BITS;
+  uart_config.parity = UART_PARITY_DISABLE;
+  uart_config.stop_bits = UART_STOP_BITS_1;
+  uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
+  // Install the driver, and get the queue
+  ESP_ERROR_CHECK(uart_driver_install(UART_NUM,      // UART_NUM
+                                      BUF_SIZE * 2,  // rx_buffer_size
+                                      BUF_SIZE * 2,  // tx_buffer_size
+                                      20,            // queue_size
+                                      &uart0_queue,  // uart_queue
+                                      0              // intr_alloc_flags
+                                      ));
+  ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
+
+  // Set uart pin
+  ESP_ERROR_CHECK(uart_set_pin(UART_NUM, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE,
+                               UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+  // ***************************************************************************
   i2c_config_t conf;
   conf.mode = I2C_MODE_MASTER;
-  conf.sda_io_num = (gpio_num_t)GPIO_NUM_14;
-  conf.scl_io_num = (gpio_num_t)GPIO_NUM_26;
+  // conf.sda_io_num = (gpio_num_t)GPIO_NUM_14;
+  conf.sda_io_num = (gpio_num_t)14;
+  // conf.scl_io_num = (gpio_num_t)GPIO_NUM_26;
+  conf.scl_io_num = (gpio_num_t)26;
   conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.master.clk_speed = 400000;
@@ -50,7 +93,7 @@ void app_main(void) {
 
   // ***************************************************************************
   ledc_timer_config_t timer_conf = {.speed_mode = SPEED_MODE,
-                                    .duty_resolution = LEDC_TIMER_12_BIT,
+                                    .duty_resolution = DUTY_RESOLUTION,
                                     .timer_num = LEDC_TIMER_0,
                                     .freq_hz = 50,
                                     .clk_cfg = LEDC_AUTO_CLK};
@@ -65,24 +108,64 @@ void app_main(void) {
                                      .hpoint = 0};
   ESP_ERROR_CHECK(ledc_channel_config(&ledc_conf));
 
-  Quaternion q;        // [w, x, y, z]         quaternion container
-  VectorFloat gravity; // [x, y, z]            gravity vector
-  float ypr[3]; // [yaw, pitch, roll]   yaw/pitch/roll container and gravity
-                // vector
-  uint16_t packetSize = 42; // expected DMP packet size (default is 42 bytes)
-  uint16_t fifoCount;       // count of all bytes currently in FIFO
-  uint8_t fifoBuffer[64];   // FIFO storage buffer
-  uint8_t mpuIntStatus;     // holds actual interrupt status byte from MPU
+  // **************************************************************************
+
+  Quaternion q;         // [w, x, y, z]         quaternion container
+  VectorFloat gravity;  // [x, y, z]            gravity vector
+  float ypr[3];  // [yaw, pitch, roll]   yaw/pitch/roll container and gravity
+                 // vector
+  uint16_t packetSize = 42;  // expected DMP packet size (default is 42 bytes)
+  uint16_t fifoCount;        // count of all bytes currently in FIFO
+  uint8_t fifoBuffer[64];    // FIFO storage buffer
+  uint8_t mpuIntStatus;      // holds actual interrupt status byte from MPU
+
+  float roll = 0;
+
+  // With this calibration
+  float calibration_ms = 0.9075;
+  uint32_t duty_cycle = ms_to_duty(calibration_ms);
+  // **************************************************************************
+  // Stay 5s at the minimum duty cycle to calibrate the ESC
+  printf("Calibrating the ESC at %fms duty for the next 5 seconds\n",
+         calibration_ms);
+  ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
+  ESP_ERROR_CHECK(ledc_update_duty(SPEED_MODE, CHANNEL));
+  vTaskDelay(pdMS_TO_TICKS(5000));
 
   // ***************************************************************************
+  uart_event_t event;
+  uint8_t *dtmp = (uint8_t *)malloc(RD_BUF_SIZE);
+
+  float ms = 1.0f;
+
   for (;;) {
     // *************************************************************************
-    int val = adc1_get_raw(ADC1_CHANNEL_0);
-    // [0, 4096) -> [204.8, 409.6)
-    uint32_t duty_cycle = val / 20 + 205;
+    if (xQueueReceive(uart0_queue, (void *)&event,
+                      (portTickType)pdMS_TO_TICKS(0))) {
+      bzero(dtmp, RD_BUF_SIZE);
+      switch (event.type) {
+        case UART_DATA:
+          uart_read_bytes(UART_NUM, dtmp, event.size, portMAX_DELAY);
+          if (dtmp[0] == 'w') {
+            ms += 0.0005;
+          }
+          if (dtmp[0] == 's') {
+            ms -= 0.0005;
+          }
+          break;
+        default:
+          ESP_LOGI(TAG, "uart event type: %d", event.type);
+          break;
+      }
+    }
+    ms = clamp(1.0f, ms, 1.08f);
 
-    printf("ADC1 on GPIO34 has read the value: %d, duty_cycle: %d\n", val,
-           duty_cycle);
+    uint32_t duty_cycle = ms_to_duty(ms);
+
+    // If the roll is negative, increase motor speed
+    // duty_cycle = (uint32_t)(230.0f + -1.20f * roll);
+
+    printf("ms: %f\n", ms);
 
     // *************************************************************************
     ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
@@ -100,22 +183,26 @@ void app_main(void) {
     //   // otherwise, check for DMP data ready interrupt frequently)
     // } else if (mpuIntStatus & 0x02) {
     //   // wait for correct available data length, should be a VERY short wait
-    //   while (fifoCount < packetSize)
+    //   while (fifoCount < packetSize) {
     //     fifoCount = mpu.getFIFOCount();
+    //   }
 
     //   // read a packet from FIFO
-
     //   mpu.getFIFOBytes(fifoBuffer, packetSize);
+
     //   mpu.dmpGetQuaternion(&q, fifoBuffer);
     //   mpu.dmpGetGravity(&gravity, &q);
     //   mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-    //   printf("YAW: %3.1f, ", ypr[0] * 180 / M_PI);
-    //   printf("PITCH: %3.1f, ", ypr[1] * 180 / M_PI);
-    //   printf("ROLL: %3.1f \n", ypr[2] * 180 / M_PI);
+
+    //   // printf("YAW: %3.1f, ", ypr[0] * 180 / M_PI);
+    //   // printf("PITCH: %3.1f, ", ypr[1] * 180 / M_PI);
+    //   roll = ypr[2] * 180 / M_PI;
     // }
+    // *************************************************************************
+    // printf("ROLL: %3.1f, DUTY: %d \n", roll, duty_cycle);
 
     // *************************************************************************
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(PERIOD));
   }
 }
 }
