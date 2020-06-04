@@ -136,70 +136,74 @@ void app_main(void) {
   uart_event_t event;
   uint8_t *dtmp = (uint8_t *)malloc(RD_BUF_SIZE);
 
+  // Starting value
   float ms = 1.0f;
 
   for (;;) {
     // *************************************************************************
-    if (xQueueReceive(uart0_queue, (void *)&event,
-                      (portTickType)pdMS_TO_TICKS(0))) {
-      bzero(dtmp, RD_BUF_SIZE);
-      switch (event.type) {
-        case UART_DATA:
-          uart_read_bytes(UART_NUM, dtmp, event.size, portMAX_DELAY);
-          if (dtmp[0] == 'w') {
-            ms += 0.0005;
-          }
-          if (dtmp[0] == 's') {
-            ms -= 0.0005;
-          }
-          break;
-        default:
-          ESP_LOGI(TAG, "uart event type: %d", event.type);
-          break;
-      }
-    }
-    ms = clamp(1.0f, ms, 1.08f);
+    // if (xQueueReceive(uart0_queue, (void *)&event,
+    //                   (portTickType)pdMS_TO_TICKS(0))) {
+    //   bzero(dtmp, RD_BUF_SIZE);
+    //   switch (event.type) {
+    //     case UART_DATA:
+    //       uart_read_bytes(UART_NUM, dtmp, event.size, portMAX_DELAY);
+    //       if (dtmp[0] == 'w') {
+    //         ms += 0.0005;
+    //       }
+    //       if (dtmp[0] == 's') {
+    //         ms -= 0.0005;
+    //       }
+    //       break;
+    //     default:
+    //       ESP_LOGI(TAG, "uart event type: %d", event.type);
+    //       break;
+    //   }
+    // }
+    // ms = clamp(1.0f, ms, 1.08f);
+
+    // *************************************************************************
+
+    float error_offset = 25;
+    float u_offset = 1;
+    float u_gain = 1.6f * 1e-3;
+
+    float error = 0.0f - roll;
+    float u = (u_gain * (error + error_offset)) + u_offset;
+    ms = clamp(1, u, 1.08);
 
     uint32_t duty_cycle = ms_to_duty(ms);
-
-    // If the roll is negative, increase motor speed
-    // duty_cycle = (uint32_t)(230.0f + -1.20f * roll);
-
-    printf("ms: %f\n", ms);
 
     // *************************************************************************
     ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
     ESP_ERROR_CHECK(ledc_update_duty(SPEED_MODE, CHANNEL));
 
     // *************************************************************************
-    // mpuIntStatus = mpu.getIntStatus();
-    // // get current FIFO count
-    // fifoCount = mpu.getFIFOCount();
+    mpuIntStatus = mpu.getIntStatus();
+    // get current FIFO count
+    fifoCount = mpu.getFIFOCount();
 
-    // if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
-    //   // reset so we can continue cleanly
-    //   mpu.resetFIFO();
+    if ((mpuIntStatus & 0x10) || fifoCount == 1024) {
+      // reset so we can continue cleanly
+      mpu.resetFIFO();
 
-    //   // otherwise, check for DMP data ready interrupt frequently)
-    // } else if (mpuIntStatus & 0x02) {
-    //   // wait for correct available data length, should be a VERY short wait
-    //   while (fifoCount < packetSize) {
-    //     fifoCount = mpu.getFIFOCount();
-    //   }
+      // otherwise, check for DMP data ready interrupt frequently)
+    } else if (mpuIntStatus & 0x02) {
+      // wait for correct available data length, should be a VERY short wait
+      while (fifoCount < packetSize) {
+        fifoCount = mpu.getFIFOCount();
+      }
 
-    //   // read a packet from FIFO
-    //   mpu.getFIFOBytes(fifoBuffer, packetSize);
+      // read a packet from FIFO
+      mpu.getFIFOBytes(fifoBuffer, packetSize);
 
-    //   mpu.dmpGetQuaternion(&q, fifoBuffer);
-    //   mpu.dmpGetGravity(&gravity, &q);
-    //   mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+      mpu.dmpGetQuaternion(&q, fifoBuffer);
+      mpu.dmpGetGravity(&gravity, &q);
+      mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
 
-    //   // printf("YAW: %3.1f, ", ypr[0] * 180 / M_PI);
-    //   // printf("PITCH: %3.1f, ", ypr[1] * 180 / M_PI);
-    //   roll = ypr[2] * 180 / M_PI;
-    // }
-    // *************************************************************************
-    // printf("ROLL: %3.1f, DUTY: %d \n", roll, duty_cycle);
+      // printf("YAW: %3.1f, ", ypr[0] * 180 / M_PI);
+      // printf("PITCH: %3.1f, ", ypr[1] * 180 / M_PI);
+      roll = ypr[2] * 180 / M_PI;
+    }
 
     // *************************************************************************
     vTaskDelay(pdMS_TO_TICKS(PERIOD));
