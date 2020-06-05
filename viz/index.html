@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="./uPlot.min.css">
+</head>
+
+<body>
+    <h1>Plot</h1>
+    <script src="./uPlot.iife.min.js"></script>
+    <script>
+        const ws = new WebSocket('ws://localhost:8000')
+
+        let data = [
+            [],
+            [],
+            [],
+        ];
+        let opts = {
+            title: "My Chart",
+            id: "chart1",
+            class: "my-chart",
+            width: 1280,
+            height: 720,
+            series: [
+                {},
+                {},
+                {},
+            ],
+        };
+
+        let uplot = new uPlot(opts, data, document.body);
+
+        let i = 0;
+        ws.onmessage = ev => {
+            let d = JSON.parse(ev.data);
+            data[0].push(i++)
+            data[1].push(d[0])
+            data[2].push(d[1])
+
+            if (data[0].length > 1000) {
+
+                data[0].shift()
+                data[1].shift()
+                data[2].shift()
+            }
+            uplot.setData(data);
+        }
+    </script>
+</body>
+
+</html>

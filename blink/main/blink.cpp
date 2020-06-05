@@ -16,7 +16,7 @@
 #define SPEED_MODE LEDC_LOW_SPEED_MODE
 #define CHANNEL LEDC_CHANNEL_0
 #define ESC_SIGNAL_GPIO_NUM 33
-#define PERIOD 20  // 20ms => f = 1/T = 50Hz
+#define PERIOD 20 // 20ms => f = 1/T = 50Hz
 #define UART_NUM UART_NUM_0
 #define DUTY_RESOLUTION LEDC_TIMER_19_BIT
 
@@ -46,12 +46,12 @@ void app_main(void) {
   uart_config.stop_bits = UART_STOP_BITS_1;
   uart_config.flow_ctrl = UART_HW_FLOWCTRL_DISABLE;
   // Install the driver, and get the queue
-  ESP_ERROR_CHECK(uart_driver_install(UART_NUM,      // UART_NUM
-                                      BUF_SIZE * 2,  // rx_buffer_size
-                                      BUF_SIZE * 2,  // tx_buffer_size
-                                      20,            // queue_size
-                                      &uart0_queue,  // uart_queue
-                                      0              // intr_alloc_flags
+  ESP_ERROR_CHECK(uart_driver_install(UART_NUM,     // UART_NUM
+                                      BUF_SIZE * 2, // rx_buffer_size
+                                      BUF_SIZE * 2, // tx_buffer_size
+                                      20,           // queue_size
+                                      &uart0_queue, // uart_queue
+                                      0             // intr_alloc_flags
                                       ));
   ESP_ERROR_CHECK(uart_param_config(UART_NUM, &uart_config));
 
@@ -110,14 +110,14 @@ void app_main(void) {
 
   // **************************************************************************
 
-  Quaternion q;         // [w, x, y, z]         quaternion container
-  VectorFloat gravity;  // [x, y, z]            gravity vector
-  float ypr[3];  // [yaw, pitch, roll]   yaw/pitch/roll container and gravity
-                 // vector
-  uint16_t packetSize = 42;  // expected DMP packet size (default is 42 bytes)
-  uint16_t fifoCount;        // count of all bytes currently in FIFO
-  uint8_t fifoBuffer[64];    // FIFO storage buffer
-  uint8_t mpuIntStatus;      // holds actual interrupt status byte from MPU
+  Quaternion q;        // [w, x, y, z]         quaternion container
+  VectorFloat gravity; // [x, y, z]            gravity vector
+  float ypr[3]; // [yaw, pitch, roll]   yaw/pitch/roll container and gravity
+                // vector
+  uint16_t packetSize = 42; // expected DMP packet size (default is 42 bytes)
+  uint16_t fifoCount;       // count of all bytes currently in FIFO
+  uint8_t fifoBuffer[64];   // FIFO storage buffer
+  uint8_t mpuIntStatus;     // holds actual interrupt status byte from MPU
 
   float roll = 0;
 
@@ -172,6 +172,8 @@ void app_main(void) {
     ms = clamp(1, u, 1.08);
 
     uint32_t duty_cycle = ms_to_duty(ms);
+
+    printf("%f %f\n", error, ms);
 
     // *************************************************************************
     ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
