@@ -17,7 +17,6 @@
         let data = [
             [],
             [],
-            [],
         ];
         let opts = {
             title: "My Chart",
@@ -28,7 +27,6 @@
             series: [
                 {},
                 {},
-                {},
             ],
         };
 
@@ -36,16 +34,13 @@
 
         let i = 0;
         ws.onmessage = ev => {
-            let d = JSON.parse(ev.data);
+            let d = ev.data.split(", ");
             data[0].push(i++)
-            data[1].push(d[0])
-            data[2].push(d[1])
+            data[1].push(d[1])
 
-            if (data[0].length > 1000) {
-
+            if (data[0].length > 512) {
                 data[0].shift()
                 data[1].shift()
-                data[2].shift()
             }
             uplot.setData(data);
         }

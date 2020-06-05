@@ -1,14 +1,14 @@
+use ring_channel::*;
+use std::num::NonZeroUsize;
+
 use serialport::{open_with_settings, SerialPortSettings};
 use std::io;
 use std::net::TcpListener;
-use std::sync::{Arc, RwLock};
 use std::thread;
 use std::thread::spawn;
 use tungstenite::server::accept;
 fn main() {
-    // TODO(Andrea): Instead of having a single item how about deque
-    let lock = Arc::new(RwLock::new(vec![0f32, 0f32]));
-    let c_lock = lock.clone();
+    let (mut producer, consumer) = ring_channel::<Vec<f32>>(NonZeroUsize::new(100).unwrap());
 
     let freq = 200;
     let period = std::time::Duration::from_millis(1000 / freq);
@@ -30,15 +30,16 @@ fn main() {
                 str_buf.push_str(std::str::from_utf8(&serial_buf[..t]).unwrap());
 
                 if str_buf.ends_with('\n') {
-                    let err_roll: Vec<f32> = str_buf
-                        .split(" ")
-                        .map(|s| s.trim().to_string().parse::<f32>())
-                        .flat_map(|r| r)
-                        .collect();
-                    if err_roll.len() == 2 {
-                        let mut w = lock.write().unwrap();
-                        *w = err_roll.clone();
-                    }
+                    str_buf = str_buf.trim().to_string();
+                    println!("{}", str_buf);
+                    let data = str_buf
+                        .split(", ")
+                        .flat_map(|s| s.split(" "))
+                        .map(|s| s.parse())
+                        .flat_map(|s| s)
+                        .collect::<Vec<f32>>();
+
+                    producer.send(data).unwrap();
 
                     str_buf = "".to_string();
                 }
@@ -53,7 +54,7 @@ fn main() {
     // For each connection, like an infinite loop + accept
     for stream in server.incoming() {
         // Create a clone for the RWLock, which is then moved by the thread
-        let cc_lock = c_lock.clone();
+        let mut consumer_clone = consumer.clone();
         // Spawn a new thread taking ownership of that connection's stream
         spawn(move || {
             // Accept the given stream as a websocket.
@@ -61,12 +62,10 @@ fn main() {
             let mut websocket = accept(stream.unwrap()).unwrap();
 
             loop {
-                let r = cc_lock.read().unwrap();
-                let msg = tungstenite::Message::Text(format!("{:?}", *r));
+                let r = consumer_clone.recv().unwrap();
+                let msg = tungstenite::Message::Text(format!("{:?}", r));
 
                 websocket.write_message(msg).unwrap();
-
-                thread::sleep(std::time::Duration::from_millis(15));
             }
         });
     }

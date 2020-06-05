@@ -9,3 +9,4 @@ edition = "2018"
 [dependencies]
 serialport = "3.3.0"
 tungstenite = "0.10.1"
+ring-channel = "0.8.2"
