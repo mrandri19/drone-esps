@@ -119,8 +119,6 @@ void app_main(void) {
   uint8_t fifoBuffer[64];   // FIFO storage buffer
   uint8_t mpuIntStatus;     // holds actual interrupt status byte from MPU
 
-  float roll = 0;
-
   // With this calibration
   float calibration_ms = 0.9075;
   uint32_t duty_cycle = ms_to_duty(calibration_ms);
@@ -139,45 +137,21 @@ void app_main(void) {
   // Starting value
   float ms = 1.0f;
 
+  float e_integral = 0.0f;
+  float e_previous = 0.0f;
+
+  float K_p = 0.5f;
+  float K_i = 0.0125f;
+  float K_d = 0.005f;
+
+  float r = 0.0f;
+
+  // Normalize the angle between -1.0 and 1.0
+  float K_roll = 1.0f / 25.0f;
+  float y_des = clamp(-1.0f, K_roll * r, 1.0f);
+
   for (;;) {
-    // *************************************************************************
-    // if (xQueueReceive(uart0_queue, (void *)&event,
-    //                   (portTickType)pdMS_TO_TICKS(0))) {
-    //   bzero(dtmp, RD_BUF_SIZE);
-    //   switch (event.type) {
-    //     case UART_DATA:
-    //       uart_read_bytes(UART_NUM, dtmp, event.size, portMAX_DELAY);
-    //       if (dtmp[0] == 'w') {
-    //         ms += 0.0005;
-    //       }
-    //       if (dtmp[0] == 's') {
-    //         ms -= 0.0005;
-    //       }
-    //       break;
-    //     default:
-    //       ESP_LOGI(TAG, "uart event type: %d", event.type);
-    //       break;
-    //   }
-    // }
-    // ms = clamp(1.0f, ms, 1.08f);
-
-    // *************************************************************************
-
-    float error_offset = 25;
-    float u_offset = 1;
-    float u_gain = 1.6f * 1e-3;
-
-    float error = 0.0f - roll;
-    float u = (u_gain * (error + error_offset)) + u_offset;
-    ms = clamp(1, u, 1.08);
-
-    uint32_t duty_cycle = ms_to_duty(ms);
-
-    printf("%f %f\n", error, ms);
-
-    // *************************************************************************
-    ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
-    ESP_ERROR_CHECK(ledc_update_duty(SPEED_MODE, CHANNEL));
+    float roll = 0.0f;
 
     // *************************************************************************
     mpuIntStatus = mpu.getIntStatus();
@@ -207,6 +181,49 @@ void app_main(void) {
       roll = ypr[2] * 180 / M_PI;
     }
 
+    // *************************************************************************
+    // if (xQueueReceive(uart0_queue, (void *)&event,
+    //                   (portTickType)pdMS_TO_TICKS(0))) {
+    //   bzero(dtmp, RD_BUF_SIZE);
+    //   switch (event.type) {
+    //     case UART_DATA:
+    //       uart_read_bytes(UART_NUM, dtmp, event.size, portMAX_DELAY);
+    //       if (dtmp[0] == 'w') {
+    //         ms += 0.0005;
+    //       }
+    //       if (dtmp[0] == 's') {
+    //         ms -= 0.0005;
+    //       }
+    //       break;
+    //     default:
+    //       ESP_LOGI(TAG, "uart event type: %d", event.type);
+    //       break;
+    //   }
+    // }
+    // ms = clamp(1.0f, ms, 1.08f);
+
+    // *************************************************************************
+
+    float y = clamp(-1.0f, K_roll * roll, 1.0f);
+
+    float e = y_des - y;
+
+    e_integral += e;
+
+    float e_derivative = e - e_previous;
+    e_previous = e;
+
+    float u = K_p * e + K_i * e_integral + K_p * e_derivative;
+
+    ms = clamp(1.0f, 0.03f * u + 1.03f, 1.06f);
+
+    uint32_t duty_cycle = ms_to_duty(ms);
+
+    printf("e_i: %6f, e: %6f, ms: %6f\n", e_integral, e, ms);
+
+    // *************************************************************************
+    ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
+    ESP_ERROR_CHECK(ledc_update_duty(SPEED_MODE, CHANNEL));
     // *************************************************************************
     vTaskDelay(pdMS_TO_TICKS(PERIOD));
   }
