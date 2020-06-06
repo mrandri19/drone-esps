@@ -124,11 +124,11 @@ void app_main(void) {
   uint32_t duty_cycle = ms_to_duty(calibration_ms);
   // **************************************************************************
   // Stay 5s at the minimum duty cycle to calibrate the ESC
-  printf("Calibrating the ESC at %fms duty for the next 5 seconds\n",
+  printf("Calibrating the ESC at %fms duty for the next 4 seconds\n",
          calibration_ms);
   ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
   ESP_ERROR_CHECK(ledc_update_duty(SPEED_MODE, CHANNEL));
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(4000));
 
   // ***************************************************************************
   uart_event_t event;
@@ -140,14 +140,19 @@ void app_main(void) {
   float e_integral = 0.0f;
   float e_previous = 0.0f;
 
-  float K_p = 0.5f;
-  float K_i = 0.0125f;
-  float K_d = 0.005f;
+  // https: // en.wikipedia.org/wiki/Ziegler%E2%80%93Nichols_method
+  float K_u = 1.0;
+  float T_u = 1.0;
+
+  // NO overshoot
+  float K_p = K_u / 5;
+  float T_i = T_u / 2;
+  float T_d = T_u / 3;
 
   float r = 0.0f;
 
   // Normalize the angle between -1.0 and 1.0
-  float K_roll = 1.0f / 25.0f;
+  float K_roll = -1.0f / 25.0f;
   float y_des = clamp(-1.0f, K_roll * r, 1.0f);
 
   for (;;) {
@@ -208,18 +213,19 @@ void app_main(void) {
 
     float e = y_des - y;
 
-    e_integral += e;
+    e_integral += (e * ((float)PERIOD / 1000.0f));
 
-    float e_derivative = e - e_previous;
+    float e_derivative = (e - e_previous) / ((float)PERIOD / 1000.0f);
     e_previous = e;
 
-    float u = K_p * e + K_i * e_integral + K_p * e_derivative;
+    float u = K_p * (e + (1 / T_i) * e_integral + T_d * e_derivative);
 
-    ms = clamp(1.0f, 0.03f * u + 1.03f, 1.06f);
+    ms = clamp(1.0f, 0.04f * u + 1.04f, 1.08f);
 
     uint32_t duty_cycle = ms_to_duty(ms);
 
-    printf("e_i: %6f, e: %6f, ms: %6f\n", e_integral, e, ms);
+    printf("ms: % 8.4f, e_i: % 8.4f, e: % 8.4f, e_d: % 8.4f\n", ms, e_integral,
+           e, e_derivative);
 
     // *************************************************************************
     ESP_ERROR_CHECK(ledc_set_duty(SPEED_MODE, CHANNEL, duty_cycle));
